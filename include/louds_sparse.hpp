@@ -335,7 +335,7 @@ bool LoudsSparse::findNextNodeOrValue(const char keyByte, size_t &node_num) cons
 void LoudsSparse::getNode(size_t nodeNumber, std::vector<uint8_t> &labels, std::vector<uint64_t> &values) {
   position_t pos = getFirstLabelPos(nodeNumber);
   size_t size = nodeSize(pos);
-  for (size_t i = pos; i < pos + size; i++) {
+  for (size_t i = pos; i < std::min<size_t>(pos + size, this->child_indicator_bits_->numBits()); i++) {
     labels.emplace_back(labels_->operator[](i));
     if (child_indicator_bits_->readBit(i)) { // there is a child node
       auto childNodeNum = getChildNodeNum(i);
