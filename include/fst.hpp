@@ -160,6 +160,10 @@ class FST {
 
   level_t getSparseStartLevel() const;
 
+  const std::vector<uint64_t> &getSparseValues() const;
+
+  const std::vector<uint64_t> &getDenseValues() const;
+
   char *serialize() const {
     uint64_t size = serializedSize();
     char *data = new char[size];
@@ -242,10 +246,12 @@ uint64_t FST::lookupNodeNum(const char *key, uint64_t key_length) const {
 
 std::pair<bool, uint64_t> FST::lookupNodeNumOption(const char *key, uint64_t key_length) const {
   position_t node_num = 0;
-  if (!louds_dense_->lookupNodeNumberOption(key, key_length, node_num)) return {false, UINT64_MAX};
-  if (key_length < louds_sparse_->getStartLevel()) return {false, UINT64_MAX};
-  if (louds_sparse_->lookupNodeNumberOption(key, key_length, node_num)) return {true, node_num};
-  return {false, UINT64_MAX};
+  const auto [continue_in_sparse, available] = louds_dense_->lookupNodeNumberOption(key, key_length, node_num);
+  if (!available) return {false, UINT64_MAX};
+  if (continue_in_sparse && key_length < louds_sparse_->getStartLevel())
+    if (!louds_sparse_->lookupNodeNumberOption(key, key_length, node_num))
+      return {true, UINT64_MAX};
+  return {true, node_num};
 }
 
 inline bool FST::lookupKeyAtNode(const char *key, uint64_t key_length, level_t level, size_t node_number,
@@ -452,6 +458,14 @@ uint64_t FST::getMemoryUsage() const {
 level_t FST::getHeight() const { return louds_sparse_->getHeight(); }
 
 level_t FST::getSparseStartLevel() const { return louds_sparse_->getStartLevel(); }
+
+const std::vector<uint64_t> &FST::getSparseValues() const {
+  return this->louds_sparse_->getValues();
+}
+
+const std::vector<uint64_t> &FST::getDenseValues() const {
+  return this->louds_dense_->getValues();
+}
 
 //============================================================================
 

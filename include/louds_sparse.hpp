@@ -132,6 +132,8 @@ class LoudsSparse {
 
   uint64_t getMemoryUsage() const;
 
+  [[nodiscard]] const std::vector<uint64_t> &getValues() const;
+
   void serialize(char *&dst) const {
     memcpy(dst, &height_, sizeof(height_));
     dst += sizeof(height_);
@@ -224,9 +226,10 @@ LoudsSparse::LoudsSparse(const FSTBuilder *builder,
   for (level_t level = 0; level < start_level_; level++) {
     node_count_dense_ += builder->getNodeCounts()[level];
   }
-  if (start_level_ == 0) {
+  if (start_level_ == 0 || start_level_ >= builder->getNodeCounts().size()) {
     child_count_dense_ = 0;
   } else {
+    // TODO: assert(start_level_ < builder->getNodeCounts().size()); fails
     child_count_dense_ =
         node_count_dense_ + builder->getNodeCounts()[start_level_] - 1;
   }
@@ -510,6 +513,10 @@ uint64_t LoudsSparse::serializedSize() const {
           + louds_bits_->serializedSize();
   sizeAlign(size);
   return size;
+}
+
+const std::vector<uint64_t> &LoudsSparse::getValues() const {
+  return values_sparse_;
 }
 
 uint64_t LoudsSparse::getMemoryUsage() const {
