@@ -364,7 +364,6 @@ void LoudsDense::getNode(size_t nodeNumber, std::vector<uint8_t> &labels, std::v
       }
     }
   }
-
 }
 
 bool LoudsDense::lookupNodeNumber(const char *key, uint64_t key_length, position_t &out_node_num) const {

@@ -144,8 +144,10 @@ bool LabelVector::simdSearch(const label_t target, position_t &pos,
   // CA: todo fix invalid read
   position_t num_labels_searched = 0;
   position_t num_labels_left = search_len;
-  while ((num_labels_left >> 4) > 0) { // while at least 16 elements remain
+  while ((num_labels_left >> 4) > 0 && pos + num_labels_searched + 15 < num_bytes_) { // while at least 16 elements remain and a 16 byte simd read is safe
+    // check that we are still allowed to read
     label_t *start_ptr = labels_ + pos + num_labels_searched;
+    assert(num_bytes_ - reinterpret_cast<uintptr_t>(start_ptr) + reinterpret_cast<uintptr_t>(labels_) >= 16); // needs to be safe to read 16 bytes from start_ptr
     __m128i cmp =
         _mm_cmpeq_epi8(_mm_set1_epi8(target),
                        _mm_loadu_si128(reinterpret_cast<__m128i *>(start_ptr)));
@@ -158,17 +160,14 @@ bool LabelVector::simdSearch(const label_t target, position_t &pos,
     num_labels_left -= 16;
   }
 
-  if (num_labels_left > 0) {
-    label_t *start_ptr = labels_ + pos + num_labels_searched;
-    __m128i cmp =
-        _mm_cmpeq_epi8(_mm_set1_epi8(target),
-                       _mm_loadu_si128(reinterpret_cast<__m128i *>(start_ptr)));
-    unsigned leftover_bits_mask = (1 << num_labels_left) - 1;
-    unsigned check_bits = _mm_movemask_epi8(cmp) & leftover_bits_mask;
-    if (check_bits) {
-      pos += (num_labels_searched + __builtin_ctz(check_bits));
+  while (num_labels_left > 0) {
+    assert(pos + num_labels_searched < num_bytes_);
+    if (labels_[pos + num_labels_searched] == target) {
+      pos += num_labels_searched;
       return true;
     }
+    ++num_labels_searched;
+    --num_labels_left;
   }
 
   return false;
