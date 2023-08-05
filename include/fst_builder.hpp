@@ -27,6 +27,8 @@ class FSTBuilder {
   void build(const std::vector<std::string> &keys,
              const std::vector<uint64_t> &values);
 
+  void build(const std::span<KeyPartValue> key_values, const level_t skip_prefix);
+
   static bool readBit(const std::vector<word_t> &bits, const position_t pos) {
     assert(pos < (bits.size() * kWordSize));
     position_t word_id = pos / kWordSize;
@@ -69,8 +71,14 @@ class FSTBuilder {
   std::vector<uint64_t> getSparseValues() const { return values_sparse_; }
 
  private:
-  static bool isSameKey(const std::string &a, const std::string &b) {
+  static bool isSameKey(const std::string_view a, const std::string_view b) {
+    assert(a.length() == b.length());
     return a == b;
+  }
+
+  static bool isSameKey(const std::string &a, const std::string &b, const label_t skip_prefix) {
+    assert(a.size() == b.size() && a.size() > skip_prefix);
+    return memcmp(a.c_str() + skip_prefix, b.c_str() + skip_prefix, a.size() - skip_prefix) == 0;
   }
 
   // Fill in the LOUDS-Sparse vectors through a single scan
@@ -78,13 +86,15 @@ class FSTBuilder {
   void buildSparse(const std::vector<std::string> &keys,
                    const std::vector<uint64_t> &values);
 
+  void buildSparse(std::span<KeyPartValue> key_values, level_t skip_prefix);
+
   // Walks down the current partially-filled trie by comparing key to
   // its previous key in the list until their prefixes do not match.
   // The previous key is stored as the last items in the per-level
   // label vector.
   // For each matching prefix byte(label), it sets the corresponding
   // child indicator bit to 1 for that label.
-  level_t skipCommonPrefix(const std::string &key);
+  level_t skipCommonPrefix(const std::string &key, level_t skip_prefix = 0);
 
   // Starting at the start_level of the trie, the function inserts
   // key bytes to the trie vectors until the first byte/label where
@@ -94,7 +104,8 @@ class FSTBuilder {
   level_t insertKeyBytesToTrieUntilUnique(const std::string &key,
                                           uint64_t position,
                                           const std::string &next_key,
-                                          level_t start_level);
+                                          level_t start_level,
+                                          level_t skip_prefix = 0);
 
   inline bool isCharCommonPrefix(label_t c, level_t level) const;
   inline bool isLevelEmpty(level_t level) const;
@@ -161,6 +172,15 @@ void FSTBuilder::build(const std::vector<std::string> &keys,
   }
 }
 
+void FSTBuilder::build(const std::span<KeyPartValue> key_values, const level_t skip_prefix) {
+  assert(key_values.size() > 0);
+  buildSparse(key_values, skip_prefix);
+  if (include_dense_) {
+    determineCutoffLevel();
+    buildDense();
+  }
+}
+
 void FSTBuilder::buildSparse(const std::vector<std::string> &keys,
                              const std::vector<uint64_t> &values) {
   for (position_t i = 0; i < keys.size(); i++) {
@@ -176,13 +196,28 @@ void FSTBuilder::buildSparse(const std::vector<std::string> &keys,
   }
 }
 
-level_t FSTBuilder::skipCommonPrefix(const std::string &key) {
+void FSTBuilder::buildSparse(const std::span<KeyPartValue> key_values, const level_t skip_prefix) {
+  for (position_t i = 0; i < key_values.size(); i++) {
+    level_t level = skipCommonPrefix(key_values[i].key_part, skip_prefix);
+    position_t curpos = i;
+    while ((i + 1 < key_values.size()) && isSameKey(key_values[curpos].key_part, key_values[i + 1].key_part, skip_prefix)) i++;
+    if (i < key_values.size() - 1)
+      insertKeyBytesToTrieUntilUnique(key_values[curpos].key_part, key_values[curpos].value, key_values[i + 1].key_part,
+                                      level, skip_prefix);
+    else  // for last key, there is no successor key in the list
+      insertKeyBytesToTrieUntilUnique(key_values[curpos].key_part, key_values[curpos].value, std::string(),
+                                      level, skip_prefix);
+  }
+}
+
+level_t FSTBuilder::skipCommonPrefix(const std::string &key, level_t skip_prefix) {
   level_t level = 0;
-  while (level < key.length() &&
-      isCharCommonPrefix((label_t) key[level], level)) {
+  while (level + skip_prefix < key.length() &&
+      isCharCommonPrefix((label_t) key[level + skip_prefix], level)) {
     setBit(child_indicator_bits_[level], getNumItems(level) - 1);
     level++;
   }
+  assert(level + skip_prefix < key.length());
   return level;
 }
 
@@ -190,8 +225,9 @@ level_t FSTBuilder::insertKeyBytesToTrieUntilUnique(
     const std::string &key,
     const uint64_t value,
     const std::string &next_key,
-    const level_t start_level) {
-  assert(start_level < key.length());
+    const level_t start_level,
+    const level_t skip_prefix) {
+  assert(start_level + skip_prefix < key.length());
 
   level_t level = start_level;
   bool is_start_of_node = false;
@@ -203,11 +239,11 @@ level_t FSTBuilder::insertKeyBytesToTrieUntilUnique(
 
   // After skipping the common prefix, the first following byte
   // should be in the node as the previous key.
-  insertKeyByte(key[level], level, is_start_of_node, is_term);
+  insertKeyByte(key[level + skip_prefix], level, is_start_of_node, is_term);
   level++;
 
-  if (level > next_key.length()
-      || !isSameKey(key.substr(0, level), next_key.substr(0, level))) {
+  if (level + skip_prefix > next_key.length()
+      || !isSameKey({key.begin() + skip_prefix, key.begin() + skip_prefix + level}, {next_key.begin() + skip_prefix, next_key.begin() + skip_prefix + level})) {
     values_[level - 1].emplace_back(value);
     return level;
   }
@@ -215,9 +251,9 @@ level_t FSTBuilder::insertKeyBytesToTrieUntilUnique(
   // All the following bytes inserted must be the start of a new node.
   is_start_of_node = true;
 
-  while (level < key.length() && level < next_key.length()
-      && key[level - 1] == next_key[level - 1]) {
-    insertKeyByte(key[level], level, is_start_of_node, is_term);
+  while (level + skip_prefix < key.length() && level + skip_prefix < next_key.length()
+      && key[level + skip_prefix - 1] == next_key[level + skip_prefix - 1]) {
+    insertKeyByte(key[level + skip_prefix], level, is_start_of_node, is_term);
     level++;
   }
   values_[level - 1].emplace_back(value);

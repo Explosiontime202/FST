@@ -6,6 +6,18 @@
 
 namespace fst {
 
+struct KeyPartValue {
+  /// corresponding value
+  uint64_t value{};
+  /// suffix of a key
+  std::string key_part;
+
+  KeyPartValue() = default;
+
+  KeyPartValue(const uint8_t *key, size_t key_length, uint64_t value) : key_part(reinterpret_cast<const char *>(key), key_length), value(value) {
+  }
+};
+
 using level_t = uint32_t;
 using position_t = uint32_t;
 

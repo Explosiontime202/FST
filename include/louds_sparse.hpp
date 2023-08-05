@@ -98,6 +98,8 @@ class LoudsSparse {
 
   LoudsSparse(const FSTBuilder *builder, const std::vector<std::string> &keys);
 
+  LoudsSparse(const FSTBuilder *builder, const std::vector<std::string> *keys_ptr = nullptr);
+
   ~LoudsSparse() {}
 
   // point query: trie walk starts at node "in_node_num" instead of root
@@ -216,9 +218,9 @@ class LoudsSparse {
 const position_t LoudsSparse::kRankBasicBlockSize;
 const position_t LoudsSparse::kSelectSampleInterval;
 
-LoudsSparse::LoudsSparse(const FSTBuilder *builder,
-                         const std::vector<std::string> &keys) {
-  keys_ = &keys;
+LoudsSparse::LoudsSparse(const FSTBuilder *builder, const std::vector<std::string> &keys) : LoudsSparse(builder, &keys) {};
+
+LoudsSparse::LoudsSparse(const fst::FSTBuilder *builder, const std::vector<std::string> *keys_ptr) : keys_(keys_ptr) {
   height_ = builder->getLabels().size();
   start_level_ = builder->getSparseStartLevel();
 

@@ -75,7 +75,7 @@ class FST {
     for (auto offset: offsets) {
       uint8_t key_length = data[offset];
       std::string key(reinterpret_cast<const char *>(data) + offset + 1, key_length);
-      keys_.emplace_back(move(key));
+      keys_.emplace_back(std::move(key));
     }
 
     create(keys_, values, kIncludeDense, kSparseDenseRatio);
@@ -108,9 +108,16 @@ class FST {
     create(keys, values, include_dense, sparse_dense_ratio);
   }
 
+  FST(const std::span<KeyPartValue> key_values, const size_t skip_prefix = 0ULL) {
+    create(key_values, skip_prefix, kIncludeDense, kSparseDenseRatio);
+  }
+
   ~FST() = default;
 
   void create(const std::vector<std::string> &keys, const std::vector<uint64_t> &values, bool include_dense,
+              uint32_t sparse_dense_ratio);
+
+  void create(const std::span<KeyPartValue> key_values, level_t skip_prefix, bool include_dense,
               uint32_t sparse_dense_ratio);
 
   bool lookupKey(const std::string &key, uint64_t &value) const;
@@ -198,6 +205,16 @@ void FST::create(const std::vector<std::string> &keys, const std::vector<uint64_
   builder_->build(keys, values);
   louds_dense_ = std::make_unique<LoudsDense>(builder_.get(), keys);
   louds_sparse_ = std::make_unique<LoudsSparse>(builder_.get(), keys);
+  iter_ = FST::Iter(this);
+  builder_.reset();
+}
+
+void FST::create(const std::span<KeyPartValue> key_values, const level_t skip_prefix, const bool include_dense,
+                 const uint32_t sparse_dense_ratio) {
+  builder_ = std::make_unique<FSTBuilder>(include_dense, sparse_dense_ratio);
+  builder_->build(key_values, skip_prefix);
+  louds_dense_ = std::make_unique<LoudsDense>(builder_.get());
+  louds_sparse_ = std::make_unique<LoudsSparse>(builder_.get());
   iter_ = FST::Iter(this);
   builder_.reset();
 }

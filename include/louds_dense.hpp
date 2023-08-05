@@ -137,6 +137,8 @@ class LoudsDense {
   LoudsDense(FSTBuilder *builder,
              const std::vector<std::string> &keys);
 
+  LoudsDense(FSTBuilder *builder, const std::vector<std::string> *keys_ptr = nullptr);
+
   ~LoudsDense() = default;
 
   // Returns whether key exists in the trie so far
@@ -226,14 +228,13 @@ class LoudsDense {
 const position_t LoudsDense::kNodeFanout;
 const position_t LoudsDense::kRankBasicBlockSize;
 
-LoudsDense::LoudsDense(FSTBuilder *builder,
-                       const std::vector<std::string> &keys) {
-  keys_ = &keys;
+LoudsDense::LoudsDense(FSTBuilder *builder, const std::vector<std::string> &keys) : LoudsDense(builder, &keys) {}
+
+LoudsDense::LoudsDense(FSTBuilder *builder, const std::vector<std::string> *keys_ptr) : keys_(keys_ptr) {
   height_ = builder->getSparseStartLevel();
   std::vector<position_t> num_bits_per_level;
   for (level_t level = 0; level < height_; level++)
-    num_bits_per_level.push_back(builder->getBitmapLabels()[level].size() *
-        kWordSize);
+    num_bits_per_level.push_back(builder->getBitmapLabels()[level].size() * kWordSize);
 
   label_bitmaps_ = std::make_unique<BitvectorRank>(kRankBasicBlockSize,
                                                    builder->getBitmapLabels(),
@@ -256,6 +257,7 @@ LoudsDense::LoudsDense(FSTBuilder *builder,
   // todo make more efficient by completely moving this vector
   values_dense_ = builder->getDenseValues();
 }
+
 
 bool LoudsDense::lookupKey(const std::string &key, position_t &out_node_num,
                            uint64_t &value) const {
