@@ -4,6 +4,7 @@
 #include <string>
 #include <type_traits>
 #include <vector>
+#include <span>
 
 #include "config.hpp"
 #include "fst_builder.hpp"
