@@ -166,6 +166,9 @@ void Bitvector::concatenateBitvectors(
       bits_[word_id] |= (last_word >> bit_shift);
       if (bit_shift + bits_remain < kWordSize) {
         bit_shift += bits_remain;
+      } else if(bit_shift + bits_remain == kWordSize) {
+        word_id++;
+        bit_shift = 0;
       } else {
         word_id++;
         bits_[word_id] |= (last_word << (kWordSize - bit_shift));
